@@ -81,9 +81,15 @@ const PayPage: React.FC = () => {
       // Configure Stripe success/return URL redirecting to our StatusPage
       const returnUrl = `${window.location.origin}/status/${paymentId}`
 
-      // 3. Trigger Stripe confirm process (PayPay flow)
-      const { error } = await stripe.confirmPayPayPayment(clientSecret, {
-        return_url: returnUrl
+      // 3. Trigger Stripe confirm process (PayPay flow) using standard unified confirmPayment API
+      const { error } = await stripe.confirmPayment({
+        clientSecret,
+        confirmParams: {
+          return_url: returnUrl,
+          payment_method_data: {
+            type: 'paypay'
+          }
+        }
       })
 
       if (error) {

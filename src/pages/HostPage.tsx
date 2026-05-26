@@ -1,7 +1,9 @@
 import React, { useState } from 'react'
-import { Coins, Users, Link, Copy, Check } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Coins, Users, Link, Copy, Check, TrendingUp } from 'lucide-react'
 
 const HostPage: React.FC = () => {
+  const navigate = useNavigate()
   const [totalAmount, setTotalAmount] = useState<string>('')
   const [membersCount, setMembersCount] = useState<string>('')
   const [generatedUrl, setGeneratedUrl] = useState<string>('')
@@ -138,6 +140,15 @@ const HostPage: React.FC = () => {
           <div className="alert alert-success">
             幹事様の手間はこれだけ！支払者がリンクを開くと、スマートフォン決済（PayPay）やカードで即座に決済を行えます。
           </div>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ marginTop: '12px' }}
+            onClick={() => navigate('/dashboard')}
+          >
+            <TrendingUp size={18} />
+            リアルタイムで集金状況を確認する（管理画面）
+          </button>
         </div>
       )}
     </div>

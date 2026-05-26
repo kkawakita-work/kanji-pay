@@ -25,6 +25,13 @@ export interface PaymentGetResponse {
 export const api = {
   v1: {
     payments: {
+      $get: async () => {
+        const response = await fetch(`${API_BASE_URL}/v1/payments`)
+        return {
+          ok: response.ok,
+          json: async (): Promise<PaymentGetResponse[]> => response.json()
+        }
+      },
       $post: async (req: { json: { amount: number; memberName: string } }) => {
         const response = await fetch(`${API_BASE_URL}/v1/payments`, {
           method: 'POST',
