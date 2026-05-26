@@ -13,10 +13,19 @@ const PayPage: React.FC = () => {
   const [selectedTip, setSelectedTip] = useState<number>(0)
   const [loading, setLoading] = useState<boolean>(false)
   const [errorMsg, setErrorMsg] = useState<string>('')
+  const [tenantId, setTenantId] = useState<string>('')
 
-  // Load split amount from query parameters
+  // Load split amount and tenantId from query parameters
   useEffect(() => {
     const amtParam = searchParams.get('amount')
+    const tenantParam = searchParams.get('tenantId')
+
+    if (!tenantParam) {
+      setErrorMsg('集金イベント情報 (tenantId) が不足しています。幹事から共有された正しいURLを開いてください。')
+      return
+    }
+    setTenantId(tenantParam)
+
     if (amtParam) {
       const parsed = parseInt(amtParam, 10)
       if (!isNaN(parsed) && parsed > 0) {
@@ -50,17 +59,22 @@ const PayPage: React.FC = () => {
       setErrorMsg('合計金額が0円以下です。')
       return
     }
+    if (!tenantId) {
+      setErrorMsg('テナント情報が見つかりません。リロードをお試しください。')
+      return
+    }
 
     setLoading(true)
     setErrorMsg('')
 
     try {
       // 1. Fetch Stripe PaymentIntent (clientSecret) from shukin-api
-      // Fully type-safe endpoint, params, and response body!
+      // Included the dynamic tenantId parameter to associate payments correctly!
       const res = await api.v1.payments.$post({
         json: {
           amount: totalAmount,
-          memberName: memberName.trim()
+          memberName: memberName.trim(),
+          tenantId: tenantId
         }
       })
 
@@ -98,7 +112,6 @@ const PayPage: React.FC = () => {
       }
 
       // On success, Stripe automatically redirects the browser to returnUrl.
-      // So normally we won't reach this line.
 
     } catch (err: any) {
       console.error(err)

@@ -1,12 +1,20 @@
 // The API base URL: defaults to local port 3000 for development
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
 
+export interface TenantResponse {
+  id: string
+  name: string
+  type: 'EVENT' | 'CLUB'
+  createdAt: string
+}
+
 export interface PaymentCreateResponse {
   id: string
   amount: number
   memberName: string
   status: 'PENDING' | 'SUCCESS' | 'FAILED'
   clientSecret: string
+  tenantId: string
 }
 
 export interface PaymentGetResponse {
@@ -15,24 +23,39 @@ export interface PaymentGetResponse {
   memberName: string
   status: 'PENDING' | 'SUCCESS' | 'FAILED'
   createdAt: string
+  tenantId: string
 }
 
 /**
- * Lightweight native fetch wrapper matching the Hono Client RPC syntax.
- * This completely isolates the front-end build environment from shukin-api's
- * node_modules to resolve cross-package version conflicts.
+ * Custom lightweight Hono RPC fetch client wrapper updated with Multi-Tenant Support.
+ * decuoples the frontend build context from backend's local node_modules.
  */
 export const api = {
   v1: {
+    tenants: {
+      $post: async (req: { json: { name: string; type: 'EVENT' | 'CLUB' } }) => {
+        const response = await fetch(`${API_BASE_URL}/v1/tenants`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(req.json)
+        })
+        return {
+          ok: response.ok,
+          json: async (): Promise<TenantResponse> => response.json()
+        }
+      }
+    },
     payments: {
-      $get: async () => {
-        const response = await fetch(`${API_BASE_URL}/v1/payments`)
+      $get: async (req: { query: { tenantId: string } }) => {
+        const response = await fetch(`${API_BASE_URL}/v1/payments?tenantId=${req.query.tenantId}`)
         return {
           ok: response.ok,
           json: async (): Promise<PaymentGetResponse[]> => response.json()
         }
       },
-      $post: async (req: { json: { amount: number; memberName: string } }) => {
+      $post: async (req: { json: { amount: number; memberName: string; tenantId: string } }) => {
         const response = await fetch(`${API_BASE_URL}/v1/payments`, {
           method: 'POST',
           headers: {

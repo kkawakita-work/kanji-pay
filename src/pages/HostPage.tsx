@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Coins, Users, Link, Copy, Check, TrendingUp } from 'lucide-react'
+import { Coins, Users, Link, Copy, Check, TrendingUp, AlertCircle } from 'lucide-react'
+import { api } from '../lib/api'
 
 const HostPage: React.FC = () => {
   const navigate = useNavigate()
@@ -8,6 +9,9 @@ const HostPage: React.FC = () => {
   const [membersCount, setMembersCount] = useState<string>('')
   const [generatedUrl, setGeneratedUrl] = useState<string>('')
   const [copied, setCopied] = useState<boolean>(false)
+  const [loading, setLoading] = useState<boolean>(false)
+  const [errorMsg, setErrorMsg] = useState<string>('')
+  const [tenantId, setTenantId] = useState<string>('')
 
   // Calculate the bill split per member (rounded up)
   const calculatePerMember = (): number => {
@@ -19,15 +23,43 @@ const HostPage: React.FC = () => {
 
   const perMemberAmount = calculatePerMember()
 
-  const handleGenerate = (e: React.FormEvent) => {
+  const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault()
     if (perMemberAmount <= 0) return
 
-    // Build absolute URL targeting our payment route (/pay)
-    const origin = window.location.origin
-    const url = `${origin}/pay?amount=${perMemberAmount}`
-    setGeneratedUrl(url)
-    setCopied(false)
+    setLoading(true)
+    setErrorMsg('')
+    setGeneratedUrl('')
+    setTenantId('')
+
+    try {
+      // 1. Create a dynamic Tenant representing this split event on the Hono backend
+      const res = await api.v1.tenants.$post({
+        json: {
+          name: `${parseInt(totalAmount).toLocaleString()}円割り勘 (${membersCount}人)`,
+          type: 'EVENT'
+        }
+      })
+
+      if (!res.ok) {
+        throw new Error('割り勘イベントの作成に失敗しました。')
+      }
+
+      const tenant = await res.json()
+      setTenantId(tenant.id)
+
+      // 2. Build guest checkout URL with absolute paths including both amount AND tenantId
+      const origin = window.location.origin
+      const url = `${origin}/pay?tenantId=${tenant.id}&amount=${perMemberAmount}`
+      setGeneratedUrl(url)
+      setCopied(false)
+
+    } catch (err: any) {
+      console.error(err)
+      setErrorMsg(err.message || '通信エラーが発生しました。再度お試しください。')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleCopy = async () => {
@@ -51,6 +83,13 @@ const HostPage: React.FC = () => {
         <p className="subtitle">幹事用：割り勘金額の計算 ＆ 決済リンク生成</p>
       </div>
 
+      {errorMsg && (
+        <div className="alert alert-danger">
+          <AlertCircle size={18} style={{ flexShrink: 0 }} />
+          <div>{errorMsg}</div>
+        </div>
+      )}
+
       <form onSubmit={handleGenerate}>
         <div className="form-group">
           <label className="form-label" htmlFor="totalAmount">
@@ -71,6 +110,7 @@ const HostPage: React.FC = () => {
                 setGeneratedUrl('') // Clear generated link if input changes
               }}
               min="1"
+              disabled={loading}
               required
             />
             <span className="input-unit">円</span>
@@ -96,6 +136,7 @@ const HostPage: React.FC = () => {
                 setGeneratedUrl('') // Clear generated link if input changes
               }}
               min="1"
+              disabled={loading}
               required
             />
             <span className="input-unit">人</span>
@@ -113,10 +154,19 @@ const HostPage: React.FC = () => {
         <button
           type="submit"
           className="btn btn-primary"
-          disabled={perMemberAmount <= 0}
+          disabled={perMemberAmount <= 0 || loading}
         >
-          <Link size={18} />
-          決済リンクを作成する
+          {loading ? (
+            <>
+              <span className="loader"></span>
+              イベント作成中...
+            </>
+          ) : (
+            <>
+              <Link size={18} />
+              決済リンクを作成する
+            </>
+          )}
         </button>
       </form>
 
@@ -144,7 +194,7 @@ const HostPage: React.FC = () => {
             type="button"
             className="btn btn-secondary"
             style={{ marginTop: '12px' }}
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate(`/dashboard?tenantId=${tenantId}`)}
           >
             <TrendingUp size={18} />
             リアルタイムで集金状況を確認する（管理画面）

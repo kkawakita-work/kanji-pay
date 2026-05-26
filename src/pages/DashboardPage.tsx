@@ -1,23 +1,31 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Coins, TrendingUp, CheckCircle2, Clock, ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react'
 import { api } from '../lib/api'
 import type { PaymentGetResponse } from '../lib/api'
 
 const DashboardPage: React.FC = () => {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [payments, setPayments] = useState<PaymentGetResponse[]>([])
   const [loading, setLoading] = useState<boolean>(true)
   const [errorMsg, setErrorMsg] = useState<string>('')
   const [refreshing, setRefreshing] = useState<boolean>(false)
 
+  const tenantId = searchParams.get('tenantId') || ''
+
   const loadPayments = async (isRefresh = false) => {
+    if (!tenantId) return
+    
     if (isRefresh) setRefreshing(true)
     else setLoading(true)
     setErrorMsg('')
 
     try {
-      const res = await api.v1.payments.$get()
+      // Fetch split bill payment details specifically filtered by our dynamic event tenantId!
+      const res = await api.v1.payments.$get({
+        query: { tenantId }
+      })
       if (!res.ok) {
         throw new Error('決済履歴の取得に失敗しました。')
       }
@@ -32,9 +40,15 @@ const DashboardPage: React.FC = () => {
     }
   }
 
+  // Enforce tenantId validation on load
   useEffect(() => {
+    if (!tenantId) {
+      setErrorMsg('管理用ダッシュボードを開くためのテナント情報 (tenantId) が不足しています。正しいURLを使用してください。')
+      setLoading(false)
+      return
+    }
     loadPayments()
-  }, [])
+  }, [tenantId])
 
   // Calculate stats
   const totalCollected = payments
@@ -57,6 +71,27 @@ const DashboardPage: React.FC = () => {
     } catch {
       return dateStr
     }
+  }
+
+  // If no tenantId provided
+  if (!tenantId) {
+    return (
+      <div className="card text-center">
+        <div className="header">
+          <h1 className="logo">
+            <Coins size={28} />
+            kanji-pay
+          </h1>
+        </div>
+        <div className="alert alert-danger" style={{ textAlign: 'left' }}>
+          <AlertCircle size={20} style={{ flexShrink: 0 }} />
+          <div>{errorMsg}</div>
+        </div>
+        <button className="btn btn-primary" onClick={() => navigate('/')}>
+          幹事画面に戻る
+        </button>
+      </div>
+    )
   }
 
   return (
@@ -83,7 +118,7 @@ const DashboardPage: React.FC = () => {
           <Coins size={28} />
           kanji-pay
         </h1>
-        <p className="subtitle">集金ダッシュボード（管理用画面）</p>
+        <p className="subtitle">集集金ダッシュボード（管理用画面）</p>
       </div>
 
       {errorMsg && (
