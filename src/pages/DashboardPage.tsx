@@ -13,6 +13,7 @@ const DashboardPage: React.FC = () => {
   const [refreshing, setRefreshing] = useState<boolean>(false)
 
   const tenantId = searchParams.get('tenantId') || ''
+  const token = searchParams.get('token') || ''
 
   const loadPayments = async (isRefresh = false) => {
     if (!tenantId) return
@@ -24,7 +25,7 @@ const DashboardPage: React.FC = () => {
     try {
       // Fetch split bill payment details specifically filtered by our dynamic event tenantId!
       const res = await api.v1.payments.$get({
-        query: { tenantId }
+        query: { tenantId, token }
       })
       if (!res.ok) {
         throw new Error('決済履歴の取得に失敗しました。')

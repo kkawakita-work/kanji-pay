@@ -5,6 +5,7 @@ export interface TenantResponse {
   id: string
   name: string
   type: 'EVENT' | 'CLUB'
+  adminToken: string // Secure token returned to host
   createdAt: string
 }
 
@@ -27,8 +28,7 @@ export interface PaymentGetResponse {
 }
 
 /**
- * Custom lightweight Hono RPC fetch client wrapper updated with Multi-Tenant Support.
- * decuoples the frontend build context from backend's local node_modules.
+ * Custom lightweight Hono RPC fetch client wrapper updated with secure token protection.
  */
 export const api = {
   v1: {
@@ -48,8 +48,9 @@ export const api = {
       }
     },
     payments: {
-      $get: async (req: { query: { tenantId: string } }) => {
-        const response = await fetch(`${API_BASE_URL}/v1/payments?tenantId=${req.query.tenantId}`)
+      $get: async (req: { query: { tenantId: string; token?: string } }) => {
+        const tokenQuery = req.query.token ? `&token=${req.query.token}` : ''
+        const response = await fetch(`${API_BASE_URL}/v1/payments?tenantId=${req.query.tenantId}${tokenQuery}`)
         return {
           ok: response.ok,
           json: async (): Promise<PaymentGetResponse[]> => response.json()

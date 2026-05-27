@@ -12,6 +12,7 @@ const HostPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false)
   const [errorMsg, setErrorMsg] = useState<string>('')
   const [tenantId, setTenantId] = useState<string>('')
+  const [adminToken, setAdminToken] = useState<string>('')
 
   // Calculate the bill split per member (rounded up)
   const calculatePerMember = (): number => {
@@ -31,6 +32,7 @@ const HostPage: React.FC = () => {
     setErrorMsg('')
     setGeneratedUrl('')
     setTenantId('')
+    setAdminToken('')
 
     try {
       // 1. Create a dynamic Tenant representing this split event on the Hono backend
@@ -47,6 +49,7 @@ const HostPage: React.FC = () => {
 
       const tenant = await res.json()
       setTenantId(tenant.id)
+      setAdminToken(tenant.adminToken)
 
       // 2. Build guest checkout URL with absolute paths including both amount AND tenantId
       const origin = window.location.origin
@@ -194,7 +197,7 @@ const HostPage: React.FC = () => {
             type="button"
             className="btn btn-secondary"
             style={{ marginTop: '12px' }}
-            onClick={() => navigate(`/dashboard?tenantId=${tenantId}`)}
+            onClick={() => navigate(`/dashboard?tenantId=${tenantId}&token=${adminToken}`)}
           >
             <TrendingUp size={18} />
             リアルタイムで集金状況を確認する（管理画面）
