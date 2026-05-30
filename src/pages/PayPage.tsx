@@ -74,7 +74,10 @@ const PayPage: React.FC = () => {
         json: {
           amount: totalAmount,
           memberName: memberName.trim(),
-          tenantId: tenantId
+          tenantId: tenantId,
+          metadata: {
+            eventId: tenantId
+          }
         }
       })
 

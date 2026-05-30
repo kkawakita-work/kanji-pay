@@ -35,6 +35,7 @@ const HostPage: React.FC = () => {
   
   // UI States
   const [showModal, setShowModal] = useState<boolean>(false)
+  const [showGuideModal, setShowGuideModal] = useState<boolean>(false)
   const [copiedEventId, setCopiedEventId] = useState<string | null>(null)
   const [globalLoading, setGlobalLoading] = useState<boolean>(false)
 
@@ -270,7 +271,7 @@ const HostPage: React.FC = () => {
           className="btn btn-primary" 
           style={{ width: 'auto', padding: '10px 16px', fontSize: '13px', borderRadius: 'var(--radius-sm)' }}
           disabled={globalLoading}
-          onClick={handleStartOnboarding}
+          onClick={() => setShowGuideModal(true)}
         >
           {globalLoading ? (
             <>
@@ -302,7 +303,7 @@ const HostPage: React.FC = () => {
             className="btn btn-primary" 
             style={{ width: 'auto', padding: '14px 28px' }}
             disabled={globalLoading}
-            onClick={handleStartOnboarding}
+            onClick={() => setShowGuideModal(true)}
           >
             {globalLoading ? (
               <>
@@ -613,6 +614,70 @@ const HostPage: React.FC = () => {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 💡 Stripe Onboarding Guide Modal */}
+      {showGuideModal && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '480px' }}>
+            <button className="modal-close" onClick={() => setShowGuideModal(false)}>
+              <X size={20} />
+            </button>
+
+            <div className="header" style={{ marginBottom: '20px' }}>
+              <div style={{ backgroundColor: 'var(--primary-light)', color: 'var(--primary)', width: '56px', height: '56px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto' }}>
+                <AlertCircle size={28} />
+              </div>
+              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '700' }}>💡 Stripe口座登録についてのご案内</h2>
+            </div>
+
+            <div style={{ fontSize: '14px', lineHeight: '1.6', color: 'var(--text-main)', marginBottom: '24px' }}>
+              <p style={{ marginBottom: '16px' }}>
+                安全な口座送金（本人確認）を行うため、これよりStripe社の公式登録画面へ移動します。
+              </p>
+              <div className="alert alert-success" style={{ border: '1px solid var(--border)', padding: '16px', borderRadius: 'var(--radius-sm)', background: 'var(--success-light)', marginBottom: '16px' }}>
+                <ul style={{ margin: 0, paddingLeft: '20px', listStyleType: 'disc' }}>
+                  <li style={{ marginBottom: '8px' }}>
+                    事業形態の選択画面では <strong>「個人事業主」</strong> を選択して進めてください（普通の個人の方もこれで全く問題ありません）。
+                  </li>
+                  <li>
+                    数分で登録は完了し、終われば自動的にこの画面に戻ってきます。
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ flex: 1 }}
+                onClick={() => setShowGuideModal(false)}
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ flex: 2 }}
+                disabled={globalLoading}
+                onClick={async () => {
+                  setShowGuideModal(false)
+                  await handleStartOnboarding()
+                }}
+              >
+                {globalLoading ? (
+                  <>
+                    <span className="loader" style={{ width: '16px', height: '16px', marginRight: '8px' }}></span>
+                    Stripeと連携中...
+                  </>
+                ) : (
+                  '連携を開始する'
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

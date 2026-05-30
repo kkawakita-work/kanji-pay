@@ -70,7 +70,14 @@ export const api = {
           json: async (): Promise<PaymentGetResponse[]> => response.json()
         }
       },
-      $post: async (req: { json: { amount: number; memberName: string; tenantId: string } }) => {
+      $post: async (req: { 
+        json: { 
+          amount: number; 
+          memberName: string; 
+          tenantId: string;
+          metadata?: { eventId: string };
+        } 
+      }) => {
         const response = await fetch(`${API_BASE_URL}/v1/payments`, {
           method: 'POST',
           headers: {
