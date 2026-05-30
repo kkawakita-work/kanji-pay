@@ -15,6 +15,9 @@ const PayPage: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string>('')
   const [tenantId, setTenantId] = useState<string>('')
 
+  const [stripeInstance, setStripeInstance] = useState<any>(null)
+  const [cardElement, setCardElement] = useState<any>(null)
+
   // Load split amount and tenantId from query parameters
   useEffect(() => {
     const amtParam = searchParams.get('amount')
@@ -37,6 +40,58 @@ const PayPage: React.FC = () => {
       setErrorMsg('決済金額が指定されていません。幹事から共有された正しいURLを開いてください。')
     }
   }, [searchParams])
+
+  // Initialize Stripe and mount Card Element safely
+  useEffect(() => {
+    if (baseAmount === 0 || errorMsg || !tenantId) return
+
+    let active = true
+    let card: any = null
+
+    const initStripe = async () => {
+      const stripe = await getStripe()
+      if (!stripe || !active) return
+      setStripeInstance(stripe)
+
+      const elements = stripe.elements()
+
+      card = elements.create('card', {
+        style: {
+          base: {
+            color: '#1f2937',
+            fontFamily: 'Inter, system-ui, sans-serif',
+            fontSmoothing: 'antialiased',
+            fontSize: '15px',
+            '::placeholder': {
+              color: '#9ca3af'
+            }
+          },
+          invalid: {
+            color: '#ef4444',
+            iconColor: '#ef4444'
+          }
+        }
+      })
+
+      // Wait briefly for the DOM element to mount the container safely
+      setTimeout(() => {
+        const container = document.getElementById('card-element')
+        if (container && active) {
+          card.mount('#card-element')
+          setCardElement(card)
+        }
+      }, 50)
+    }
+
+    initStripe()
+
+    return () => {
+      active = false
+      if (card) {
+        card.destroy()
+      }
+    }
+  }, [baseAmount, errorMsg, tenantId])
 
   const tipOptions = [
     { label: 'なし', value: 0 },
@@ -69,7 +124,7 @@ const PayPage: React.FC = () => {
 
     try {
       // 1. Fetch Stripe PaymentIntent (clientSecret) from shukin-api
-      // Included the dynamic tenantId parameter to associate payments correctly!
+      // Included the dynamic tenantId parameter and eventId metadata to associate payments correctly!
       const res = await api.v1.payments.$post({
         json: {
           amount: totalAmount,
@@ -89,22 +144,16 @@ const PayPage: React.FC = () => {
       const payment = await res.json() as any
       const { clientSecret, id: paymentId } = payment
 
-      // 2. Load Stripe.js client
-      const stripe = await getStripe()
-      if (!stripe) {
-        throw new Error('Stripeのロードに失敗しました。')
+      if (!stripeInstance || !cardElement) {
+        throw new Error('Stripeカード入力欄が初期化されていません。ブラウザのリロードをお試しください。')
       }
 
-      // Configure Stripe success/return URL redirecting to our StatusPage
-      const returnUrl = `${window.location.origin}/status/${paymentId}`
-
-      // 3. Trigger Stripe confirm process (PayPay flow) using standard unified confirmPayment API
-      const { error } = await stripe.confirmPayment({
-        clientSecret,
-        confirmParams: {
-          return_url: returnUrl,
-          payment_method_data: {
-            type: 'paypay'
+      // 2. Confirm the Card Payment using standard confirmCardPayment SDK
+      const { error, paymentIntent } = await stripeInstance.confirmCardPayment(clientSecret, {
+        payment_method: {
+          card: cardElement,
+          billing_details: {
+            name: memberName.trim()
           }
         }
       })
@@ -114,7 +163,11 @@ const PayPage: React.FC = () => {
         throw new Error(error.message || '決済処理中にエラーが発生しました。')
       }
 
-      // On success, Stripe automatically redirects the browser to returnUrl.
+      if (paymentIntent && paymentIntent.status === 'succeeded') {
+        navigate(`/status/${paymentId}`)
+      } else {
+        throw new Error('決済の処理が完了しませんでした。ステータスをご確認ください。')
+      }
 
     } catch (err: any) {
       console.error(err)
@@ -183,6 +236,24 @@ const PayPage: React.FC = () => {
           </div>
         </div>
 
+        <div className="form-group" style={{ marginBottom: '20px' }}>
+          <label className="form-label">
+            クレジットカード情報
+          </label>
+          <div 
+            id="card-element" 
+            style={{ 
+              padding: '12px 14px', 
+              border: '1px solid var(--border)', 
+              borderRadius: 'var(--radius-sm)', 
+              backgroundColor: '#fff',
+              boxShadow: 'var(--shadow-sm)'
+            }}
+          >
+            {/* Stripe Card Element mounts here */}
+          </div>
+        </div>
+
         <div className="form-group">
           <label className="form-label">
             幹事へのチップ（任意）
@@ -235,7 +306,7 @@ const PayPage: React.FC = () => {
           ) : (
             <>
               <CreditCard size={18} />
-              Stripeで支払う（PayPay決済）
+              Stripeで支払う（クレジットカード決済）
             </>
           )}
         </button>
