@@ -6,6 +6,7 @@ export interface TenantResponse {
   name: string
   type: 'EVENT' | 'CLUB'
   adminToken: string // Secure token returned to host
+  stripeConnectedAccountId?: string // Stripe Connect connected account ID
   createdAt: string
 }
 
@@ -27,6 +28,12 @@ export interface PaymentGetResponse {
   tenantId: string
 }
 
+export interface StripeOnboardingResponse {
+  onboardingUrl: string
+  tenantId: string
+  adminToken: string
+}
+
 /**
  * Custom lightweight Hono RPC fetch client wrapper updated with secure token protection.
  */
@@ -38,7 +45,7 @@ export const api = {
           name: string
           type: 'EVENT' | 'CLUB'
           paymentType?: 'STRIPE_DIRECT' | 'STRIPE_CONNECT' | 'JPYC'
-          stripeAccountId?: string
+          stripeConnectedAccountId?: string
         }
       }) => {
         const response = await fetch(`${API_BASE_URL}/v1/tenants`, {
@@ -82,6 +89,29 @@ export const api = {
           return {
             ok: response.ok,
             json: async (): Promise<PaymentGetResponse> => response.json()
+          }
+        }
+      }
+    },
+    stripe: {
+      onboarding: {
+        $post: async (req: {
+          json: {
+            type: 'EVENT' | 'CLUB'
+            paymentType: 'STRIPE_CONNECT'
+            origin: string
+          }
+        }) => {
+          const response = await fetch(`${API_BASE_URL}/v1/stripe/onboarding`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(req.json)
+          })
+          return {
+            ok: response.ok,
+            json: async (): Promise<StripeOnboardingResponse> => response.json()
           }
         }
       }

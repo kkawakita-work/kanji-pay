@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { 
-  Coins, Users, Link, Copy, Check, TrendingUp, AlertCircle, 
-  CreditCard, Plus, X, RefreshCw, Calendar, 
-  ChevronDown, ChevronUp, CheckCircle2
+  Coins, Users, Link, Copy, Check, RefreshCw, Calendar, 
+  ChevronDown, ChevronUp, CheckCircle2, CreditCard, Plus, X, AlertCircle
 } from 'lucide-react'
 import { api } from '../services/api'
 
@@ -15,7 +14,7 @@ interface ManagedEvent {
   perMemberAmount: number
   createdAt: string
   paymentType: 'STRIPE_DIRECT' | 'STRIPE_CONNECT' | 'JPYC'
-  stripeAccountId?: string
+  stripeConnectedAccountId?: string
 }
 
 interface PaymentInfo {
@@ -27,7 +26,7 @@ interface PaymentInfo {
 }
 
 const HostPage: React.FC = () => {
-  // 1. Core States for Consolidated Host Management
+  // 1. Core States for Host Management
   const [events, setEvents] = useState<ManagedEvent[]>([])
   const [paymentsMap, setPaymentsMap] = useState<{ [eventId: string]: PaymentInfo[] }>({})
   const [collectedMap, setCollectedMap] = useState<{ [eventId: string]: number }>({})
@@ -38,36 +37,82 @@ const HostPage: React.FC = () => {
   const [showModal, setShowModal] = useState<boolean>(false)
   const [copiedEventId, setCopiedEventId] = useState<string | null>(null)
 
-  // 2. New Event Creation Form States
+  // 2. New Event Creation States (Stripe Connect is required & streamlined)
   const [totalAmount, setTotalAmount] = useState<string>('')
   const [membersCount, setMembersCount] = useState<string>('')
-  const [useConnect, setUseConnect] = useState<boolean>(false)
-  const [stripeAccountId, setStripeAccountId] = useState<string>('')
   const [modalLoading, setModalLoading] = useState<boolean>(false)
   const [modalError, setModalError] = useState<boolean>(false)
   const [modalErrorMsg, setModalErrorMsg] = useState<string>('')
+  
+  // Generated success URL inside modal
   const [generatedUrl, setGeneratedUrl] = useState<string>('')
   const [newTenantId, setNewTenantId] = useState<string>('')
   const [newAdminToken, setNewAdminToken] = useState<string>('')
 
-  // Load events from localStorage on mount and sync their payments from D1
+  // 3. Load events, sync payments, AND handle Stripe Connect Callback redirect
   useEffect(() => {
+    // 🔍 Stripe Connect Onboarding Callback detection
+    const searchParams = new URLSearchParams(window.location.search)
+    const stripeConnectStatus = searchParams.get('stripe_connect')
+
+    let tempEvents: ManagedEvent[] = []
+
     try {
       const saved = localStorage.getItem('kanjipay_events')
       if (saved) {
-        const parsedEvents: ManagedEvent[] = JSON.parse(saved)
-        // 並び順は作成日時降順
-        const sorted = parsedEvents.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        setEvents(sorted)
-        
-        // 各イベントの進捗・データを非同期で並行同期
-        sorted.forEach(event => {
-          syncEventPayments(event.id, event.adminToken)
-        })
+        tempEvents = JSON.parse(saved)
       }
     } catch (err) {
       console.error('Failed to load saved events:', err)
     }
+
+    if (stripeConnectStatus === 'success') {
+      const tenantId = searchParams.get('tenantId') || ''
+      const token = searchParams.get('token') || ''
+      const amount = parseInt(searchParams.get('amount') || '0', 10)
+      const count = parseInt(searchParams.get('count') || '0', 10)
+      const perAmount = parseInt(searchParams.get('perAmount') || '0', 10)
+
+      if (tenantId && token && amount > 0) {
+        // 重複登録を防止
+        if (!tempEvents.some(e => e.id === tenantId)) {
+          const newEvent: ManagedEvent = {
+            id: tenantId,
+            name: `${amount.toLocaleString()}円割り勘 (${count}人)`,
+            adminToken: token,
+            totalAmount: amount,
+            membersCount: count,
+            perMemberAmount: perAmount,
+            createdAt: new Date().toISOString(),
+            paymentType: 'STRIPE_CONNECT'
+          }
+          
+          tempEvents = [newEvent, ...tempEvents]
+          localStorage.setItem('kanjipay_events', JSON.stringify(tempEvents))
+          console.log(`Successfully registered Stripe Connect tenant: ${tenantId}`)
+        }
+
+        // コピー用の成功URLを表示する状態にする
+        const origin = window.location.origin
+        const checkoutUrl = `${origin}/pay?tenantId=${tenantId}&amount=${perAmount}`
+        setGeneratedUrl(checkoutUrl)
+        setNewTenantId(tenantId)
+        setNewAdminToken(token)
+        setShowModal(true)
+
+        // URLパラメータをクリアして綺麗な履歴に戻す (F5リロード等での重複登録防止)
+        window.history.replaceState({}, '', '/')
+      }
+    }
+
+    // Sort and set final events list
+    const sorted = tempEvents.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    setEvents(sorted)
+    
+    // Sync current progress for each managed event from D1 Database
+    sorted.forEach(event => {
+      syncEventPayments(event.id, event.adminToken)
+    })
   }, [])
 
   // Sync payments from D1 database for a specific event
@@ -81,7 +126,7 @@ const HostPage: React.FC = () => {
       
       const data: PaymentInfo[] = await res.json()
       
-      // 成功した決済額を合算
+      // Calculate successful payment sums
       const totalCollected = data
         .filter(p => p.status === 'SUCCESS')
         .reduce((sum, p) => sum + p.amount, 0)
@@ -93,80 +138,61 @@ const HostPage: React.FC = () => {
     } finally {
       setLoadingMap(prev => ({ ...prev, [eventId]: false }))
     }
-  };
+  }
 
-  // Calculate dynamic split amount per member
+  // Calculate dynamic split amount per member (Rounded up to 10-yen units)
   const calculatePerMember = (): number => {
     const amount = parseFloat(totalAmount)
     const count = parseInt(membersCount)
     if (isNaN(amount) || isNaN(count) || count <= 0) return 0
-    return Math.ceil(amount / count)
+    
+    // 10-yen unit rounding up
+    return Math.ceil((amount / count) / 10) * 10
   }
 
   const perMemberAmount = calculatePerMember()
 
-  // Handle new event creation
-  const handleCreateEvent = async (e: React.FormEvent) => {
+  // Handle Stripe Connect standard onboarding redirect
+  const handleStartOnboarding = async (e: React.FormEvent) => {
     e.preventDefault()
     if (perMemberAmount <= 0) return
 
     setModalLoading(true)
     setModalError(false)
     setModalErrorMsg('')
-    setGeneratedUrl('')
 
     try {
-      const paymentType = useConnect ? 'STRIPE_CONNECT' : 'STRIPE_DIRECT'
-      
-      // 1. Create a dynamic Tenant on shukin-api D1 database
-      const res = await api.v1.tenants.$post({
+      // 1. Build dynamic callback origin containing state variables (amount, count, perAmount)
+      // This is passed so when Stripe redirects back to redirect_uri, we restore exact state in frontend!
+      const originWithState = `${window.location.origin}/?amount=${totalAmount}&count=${membersCount}&perAmount=${perMemberAmount}`
+
+      // 2. Call the onboarding API on shukin-api backend
+      const res = await api.v1.stripe.onboarding.$post({
         json: {
-          name: `${parseInt(totalAmount).toLocaleString()}円割り勘 (${membersCount}人)`,
           type: 'EVENT',
-          paymentType,
-          stripeAccountId: useConnect ? stripeAccountId.trim() : undefined
+          paymentType: 'STRIPE_CONNECT',
+          origin: originWithState
         }
       })
 
       if (!res.ok) {
-        throw new Error('割り勘イベントの作成に失敗しました。')
+        throw new Error('オンボーディングの作成に失敗しました。バックエンドの接続を確認してください。')
       }
 
-      const tenant = await res.json()
-      setNewTenantId(tenant.id)
-      setNewAdminToken(tenant.adminToken)
+      const onboardingData = await res.json()
+      const { onboardingUrl } = onboardingData
 
-      // 2. Build guest checkout URL
-      const origin = window.location.origin
-      const url = `${origin}/pay?tenantId=${tenant.id}&amount=${perMemberAmount}`
-      setGeneratedUrl(url)
-
-      // 3. Save to localStorage
-      const newEvent: ManagedEvent = {
-        id: tenant.id,
-        name: `${parseInt(totalAmount).toLocaleString()}円割り勘 (${membersCount}人)`,
-        adminToken: tenant.adminToken,
-        totalAmount: parseInt(totalAmount),
-        membersCount: parseInt(membersCount),
-        perMemberAmount,
-        createdAt: new Date().toISOString(),
-        paymentType,
-        stripeAccountId: useConnect ? stripeAccountId.trim() : undefined
+      if (!onboardingUrl) {
+        throw new Error('利用申請URLの発行に失敗しました。')
       }
 
-      const updatedEvents = [newEvent, ...events]
-      localStorage.setItem('kanjipay_events', JSON.stringify(updatedEvents))
-      setEvents(updatedEvents)
-
-      // Initialize maps for new event
-      setCollectedMap(prev => ({ ...prev, [tenant.id]: 0 }))
-      setPaymentsMap(prev => ({ ...prev, [tenant.id]: [] }))
+      // 3. Immediately redirect host to Stripe's secure registration/login page
+      window.location.href = onboardingUrl
 
     } catch (err: any) {
       console.error(err)
       setModalError(true)
       setModalErrorMsg(err.message || '通信エラーが発生しました。再度お試しください。')
-    } finally {
       setModalLoading(false)
     }
   }
@@ -198,11 +224,6 @@ const HostPage: React.FC = () => {
     }
   }
 
-  const isSubmitDisabled = 
-    perMemberAmount <= 0 || 
-    modalLoading || 
-    (useConnect && (!stripeAccountId.trim() || !stripeAccountId.trim().startsWith('acct_')))
-
   return (
     <div className="card" style={{ maxWidth: '600px' }}>
       {/* Dashboard Header */}
@@ -219,8 +240,6 @@ const HostPage: React.FC = () => {
             // Reset form states
             setTotalAmount('')
             setMembersCount('')
-            setUseConnect(false)
-            setStripeAccountId('')
             setGeneratedUrl('')
             setModalError(false)
             setModalErrorMsg('')
@@ -411,7 +430,7 @@ const HostPage: React.FC = () => {
             <div className="header" style={{ marginBottom: '20px' }}>
               <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
                 <Plus size={22} className="text-primary" />
-                新しい集金イベントを作成
+                新しい集集イベントを作成
               </h2>
               <p className="subtitle">割り勘金額を計算し、決済リンクを即座に生成します</p>
             </div>
@@ -424,8 +443,8 @@ const HostPage: React.FC = () => {
             )}
 
             {!generatedUrl ? (
-              // Event Parameter Input Form
-              <form onSubmit={handleCreateEvent}>
+              // Event Parameter Input Form (Stripe Connect Standard onboarding redirect flow)
+              <form onSubmit={handleStartOnboarding}>
                 <div className="form-group">
                   <label className="form-label" htmlFor="totalAmount">
                     イベント合計金額
@@ -476,95 +495,50 @@ const HostPage: React.FC = () => {
                   <div className="result-box" style={{ padding: '12px', marginBottom: '20px' }}>
                     <div className="result-label" style={{ fontSize: '11px' }}>一人あたりの支払い金額</div>
                     <div className="result-value" style={{ fontSize: '24px' }}>¥{perMemberAmount.toLocaleString()}</div>
-                    <div className="text-muted" style={{ fontSize: '11px' }}>（端数切り上げ）</div>
+                    <div className="text-muted" style={{ fontSize: '11px' }}>（端数10円単位切り上げ）</div>
                   </div>
                 )}
 
-                {/* 💳 Stripe Connect Settings Section */}
+                {/* 💳 Stripe Connect Security Notification Panel */}
                 {perMemberAmount > 0 && (
-                  <div className="form-group" style={{ marginTop: '20px', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
-                    <div className="flex-between" style={{ alignItems: 'center' }}>
-                      <div>
-                        <label className="form-label" style={{ marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <CreditCard size={18} className="text-primary" />
-                          Stripe Connect (幹事自動送金)
-                        </label>
-                        <p className="text-muted" style={{ fontSize: '12px', margin: 0 }}>
-                          参加者の支払額を、幹事のStripeアカウントへ直接・即座に自動送金します。
-                        </p>
-                      </div>
-                      <label className="switch">
-                        <input
-                          type="checkbox"
-                          checked={useConnect}
-                          onChange={(e) => {
-                            setUseConnect(e.target.checked)
-                            if (!e.target.checked) {
-                              setStripeAccountId('')
-                            }
-                          }}
-                          disabled={modalLoading}
-                        />
-                        <span className="slider round"></span>
-                      </label>
+                  <div className="alert alert-success" style={{ margin: '20px 0', border: '1px solid var(--border)' }}>
+                    <CreditCard size={18} className="text-primary" style={{ color: 'var(--primary)', flexShrink: 0, marginTop: '2px' }} />
+                    <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
+                      <strong>Stripe Connect (自動即時送金) が必須適用されます</strong><br />
+                      決済ボタンをクリックすると、Stripeの安全な利用申請（ログイン）画面に遷移します。申請完了後、集金リンクが自動生成されます。
                     </div>
-
-                    {useConnect && (
-                      <div className="input-animate" style={{ marginTop: '16px' }}>
-                        <label className="form-label" htmlFor="stripeAccountId" style={{ fontSize: '13px' }}>
-                          Stripe 接続アカウント ID
-                        </label>
-                        <div className="input-container">
-                          <span className="input-icon">
-                            <TrendingUp size={20} />
-                          </span>
-                          <input
-                            id="stripeAccountId"
-                            type="text"
-                            className="input-field input-with-icon"
-                            placeholder="acct_xxxxxxxxxxxxxx"
-                            value={stripeAccountId}
-                            onChange={(e) => setStripeAccountId(e.target.value)}
-                            disabled={modalLoading}
-                            required={useConnect}
-                          />
-                        </div>
-                        <p className="text-muted" style={{ fontSize: '11px', marginTop: '6px', color: stripeAccountId.trim() && !stripeAccountId.trim().startsWith('acct_') ? 'var(--danger)' : 'var(--text-muted)' }}>
-                          Stripeダッシュボードで作成した Connect 接続アカウント ID（acct_ で始まるID）を入力してください。
-                        </p>
-                      </div>
-                    )}
                   </div>
                 )}
 
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={isSubmitDisabled}
+                  disabled={perMemberAmount <= 0 || modalLoading}
                   style={{ marginTop: '12px' }}
                 >
                   {modalLoading ? (
                     <>
                       <span className="loader" style={{ width: '16px', height: '16px' }}></span>
-                      イベント作成中...
+                      Stripeと連携中...
                     </>
                   ) : (
                     <>
                       <Link size={18} />
-                      決済リンクを作成する
+                      Stripeで集金（利用申請画面へ）
                     </>
                   )}
                 </button>
               </form>
             ) : (
-              // Success generated URL Display Screen
+              // Success generated URL Display Screen after callback success
               <div className="share-section" style={{ borderTop: 'none', paddingTop: 0, animation: 'fadeIn 0.3s ease-out' }}>
                 <div style={{ backgroundColor: 'var(--success-light)', color: 'var(--success)', width: '48px', height: '48px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto' }}>
                   <CheckCircle2 size={28} />
                 </div>
                 <h3 className="text-center" style={{ fontSize: '18px', marginBottom: '8px' }}>🎉 決済リンクが完成しました！</h3>
                 <p className="text-muted text-center" style={{ marginBottom: '20px', fontSize: '13px', lineHeight: '1.5' }}>
-                  以下のリンクをLINEやグループチャットにシェアして、参加者から集金を開始しましょう！
+                  Stripe Connect 連携が正常に完了しました！<br />
+                  以下のリンクをLINEやグループチャットにシェアして、集金を開始しましょう！
                 </p>
 
                 <div className="share-link-box">
