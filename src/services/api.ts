@@ -40,6 +40,14 @@ export interface StripeOnboardingResponse {
 export const api = {
   v1: {
     tenants: {
+      $get: async (req: { param: { id: string }; query: { token: string } }) => {
+        const response = await fetch(`${API_BASE_URL}/v1/tenants/${req.param.id}?token=${req.query.token}`)
+        return {
+          ok: response.ok,
+          status: response.status,
+          json: async (): Promise<TenantResponse> => response.json()
+        }
+      },
       $post: async (req: {
         json: {
           name: string

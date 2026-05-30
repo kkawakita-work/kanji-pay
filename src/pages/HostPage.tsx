@@ -119,6 +119,24 @@ const HostPage: React.FC = () => {
 
       setPaymentsMap(prev => ({ ...prev, [eventId]: data }))
       setCollectedMap(prev => ({ ...prev, [eventId]: totalCollected }))
+
+      // 🌟 【自動復元 (Self-Healing) ロジック】
+      // 過去に作成されたイベントから、Stripe Connected Account ID を自動回収し LocalStorage に復元します。
+      // これにより、すでに口座連携している幹事デバイスは、古い状態からリロードした瞬間に自動で2回目以降スキップフローが有効化されます。
+      const savedAccountId = localStorage.getItem('kanjipay_stripe_account_id')
+      if (!savedAccountId) {
+        const tenantRes = await api.v1.tenants.$get({
+          param: { id: eventId },
+          query: { token: adminToken }
+        })
+        if (tenantRes.ok) {
+          const tenantData = await tenantRes.json()
+          if (tenantData.stripeConnectedAccountId) {
+            localStorage.setItem('kanjipay_stripe_account_id', tenantData.stripeConnectedAccountId)
+            console.log('Successfully self-healed and restored Stripe Account ID:', tenantData.stripeConnectedAccountId)
+          }
+        }
+      }
     } catch (err) {
       console.error(`Failed to sync payments for event ${eventId}:`, err)
     } finally {
