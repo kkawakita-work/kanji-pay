@@ -46,6 +46,51 @@ describe('api (API通信層 - Hono RPCフェッチラッパー)', () => {
     )
   })
 
+  test('【正常系】tenants.$post が stripeAccountId や paymentType を指定してリクエストを送信し、テナント情報を取得できること', async () => {
+    const mockTenant = {
+      id: 'tenant-connect-123',
+      name: 'Connect割り勘イベント',
+      type: 'EVENT',
+      paymentType: 'STRIPE_CONNECT',
+      stripeAccountId: 'acct_123456789',
+      adminToken: 'token-abc',
+      createdAt: '2026-05-30T12:00:00Z'
+    }
+
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockTenant
+    } as Response)
+
+    // まだ api.ts を変更していないため、TypeScriptの型エラーが起きる (TDD RED stepとしての型エラー)
+    const response = await api.v1.tenants.$post({
+      json: {
+        name: 'Connect割り勘イベント',
+        type: 'EVENT',
+        paymentType: 'STRIPE_CONNECT',
+        stripeAccountId: 'acct_123456789'
+      }
+    })
+
+    expect(response.ok).toBe(true)
+    const data = await response.json()
+    expect(data).toEqual(mockTenant)
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/v1/tenants'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Connect割り勘イベント',
+          type: 'EVENT',
+          paymentType: 'STRIPE_CONNECT',
+          stripeAccountId: 'acct_123456789'
+        })
+      })
+    )
+  })
+
   test('【正常系】payments.$get が tenantId と token をクエリに含めてGETリクエストを送信し、決済一覧を取得できること', async () => {
     const mockPayments = [
       {

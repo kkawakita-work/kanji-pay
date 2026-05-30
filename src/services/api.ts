@@ -33,7 +33,14 @@ export interface PaymentGetResponse {
 export const api = {
   v1: {
     tenants: {
-      $post: async (req: { json: { name: string; type: 'EVENT' | 'CLUB' } }) => {
+      $post: async (req: {
+        json: {
+          name: string
+          type: 'EVENT' | 'CLUB'
+          paymentType?: 'STRIPE_DIRECT' | 'STRIPE_CONNECT' | 'JPYC'
+          stripeAccountId?: string
+        }
+      }) => {
         const response = await fetch(`${API_BASE_URL}/v1/tenants`, {
           method: 'POST',
           headers: {

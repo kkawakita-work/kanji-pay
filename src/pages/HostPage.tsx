@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Coins, Users, Link, Copy, Check, TrendingUp, AlertCircle } from 'lucide-react'
+import { Coins, Users, Link, Copy, Check, TrendingUp, AlertCircle, CreditCard } from 'lucide-react'
 import { api } from '../services/api'
 
 const HostPage: React.FC = () => {
@@ -13,6 +13,10 @@ const HostPage: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string>('')
   const [tenantId, setTenantId] = useState<string>('')
   const [adminToken, setAdminToken] = useState<string>('')
+  
+  // Stripe Connect dynamic options state
+  const [useConnect, setUseConnect] = useState<boolean>(false)
+  const [stripeAccountId, setStripeAccountId] = useState<string>('')
 
   // Calculate the bill split per member (rounded up)
   const calculatePerMember = (): number => {
@@ -39,7 +43,9 @@ const HostPage: React.FC = () => {
       const res = await api.v1.tenants.$post({
         json: {
           name: `${parseInt(totalAmount).toLocaleString()}円割り勘 (${membersCount}人)`,
-          type: 'EVENT'
+          type: 'EVENT',
+          paymentType: useConnect ? 'STRIPE_CONNECT' : 'STRIPE_DIRECT',
+          stripeAccountId: useConnect ? stripeAccountId.trim() : undefined
         }
       })
 
@@ -154,10 +160,71 @@ const HostPage: React.FC = () => {
           </div>
         )}
 
+        {/* 💳 Stripe Connect Options Section */}
+        {perMemberAmount > 0 && (
+          <div className="form-group" style={{ marginTop: '24px', borderTop: '1px solid var(--border)', paddingTop: '20px' }}>
+            <div className="flex-between" style={{ alignItems: 'center' }}>
+              <div>
+                <label className="form-label" style={{ marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <CreditCard size={18} className="text-primary" style={{ color: 'var(--primary)' }} />
+                  Stripe Connect (幹事自動送金)
+                </label>
+                <p className="text-muted" style={{ fontSize: '12px', margin: 0 }}>
+                  参加者の支払額を、幹事のStripeアカウントへ直接・即座に自動送金します。
+                </p>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={useConnect}
+                  onChange={(e) => {
+                    setUseConnect(e.target.checked)
+                    if (!e.target.checked) {
+                      setStripeAccountId('')
+                    }
+                  }}
+                  disabled={loading}
+                />
+                <span className="slider round"></span>
+              </label>
+            </div>
+
+            {useConnect && (
+              <div className="input-animate" style={{ marginTop: '16px' }}>
+                <label className="form-label" htmlFor="stripeAccountId" style={{ fontSize: '13px' }}>
+                  Stripe 接続アカウント ID
+                </label>
+                <div className="input-container">
+                  <span className="input-icon">
+                    <TrendingUp size={20} />
+                  </span>
+                  <input
+                    id="stripeAccountId"
+                    type="text"
+                    className="input-field input-with-icon"
+                    placeholder="acct_xxxxxxxxxxxxxx"
+                    value={stripeAccountId}
+                    onChange={(e) => setStripeAccountId(e.target.value)}
+                    disabled={loading}
+                    required={useConnect}
+                  />
+                </div>
+                <p className="text-muted" style={{ fontSize: '11px', marginTop: '6px', color: stripeAccountId.trim() && !stripeAccountId.trim().startsWith('acct_') ? 'var(--danger)' : 'var(--text-muted)' }}>
+                  Stripeダッシュボードで作成した Connect 接続アカウント ID（acct_ で始まるID）を入力してください。
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         <button
           type="submit"
           className="btn btn-primary"
-          disabled={perMemberAmount <= 0 || loading}
+          disabled={
+            perMemberAmount <= 0 || 
+            loading || 
+            (useConnect && (!stripeAccountId.trim() || !stripeAccountId.trim().startsWith('acct_')))
+          }
         >
           {loading ? (
             <>
