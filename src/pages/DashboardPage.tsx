@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Coins, TrendingUp, CheckCircle2, Clock, ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react'
-import { api } from '../lib/api'
-import type { PaymentGetResponse } from '../lib/api'
+import { api } from '../services/api'
+import type { PaymentGetResponse } from '../services/api'
 
 const DashboardPage: React.FC = () => {
   const navigate = useNavigate()

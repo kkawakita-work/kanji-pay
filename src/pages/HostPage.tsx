@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Coins, Users, Link, Copy, Check, TrendingUp, AlertCircle } from 'lucide-react'
-import { api } from '../lib/api'
+import { api } from '../services/api'
 
 const HostPage: React.FC = () => {
   const navigate = useNavigate()

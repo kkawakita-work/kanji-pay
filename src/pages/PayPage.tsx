@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Coins, User, CreditCard, AlertCircle } from 'lucide-react'
-import { api } from '../lib/api'
-import { getStripe } from '../lib/stripe'
+import { api } from '../services/api'
+import { getStripe } from '../services/stripe'
 
 const PayPage: React.FC = () => {
   const [searchParams] = useSearchParams()
