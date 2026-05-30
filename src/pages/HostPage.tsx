@@ -137,20 +137,27 @@ const HostPage: React.FC = () => {
     setGlobalLoading(true)
 
     try {
-      // 1. Build simple callback origin
-      const originWithState = `${window.location.origin}/?stripe_connect=success`
+      // 1. Build simple callback origin (Pure origin without query params to avoid broken URLs on backend link generation)
+      const pureOrigin = window.location.origin
 
       // 2. Call the onboarding API on shukin-api backend
       const res = await api.v1.stripe.onboarding.$post({
         json: {
           type: 'EVENT',
           paymentType: 'STRIPE_CONNECT',
-          origin: originWithState
+          origin: pureOrigin
         }
       })
 
       if (!res.ok) {
-        throw new Error('オンボーディングの作成に失敗しました。バックエンドの接続を確認してください。')
+        let errorDetail = ''
+        try {
+          const errData = await res.json() as any
+          errorDetail = errData.error || errData.message || JSON.stringify(errData)
+        } catch {
+          errorDetail = `Status: ${(res as any).status}`
+        }
+        throw new Error(`オンボーディングの作成に失敗しました (HTTP ${(res as any).status}): ${errorDetail}`)
       }
 
       const onboardingData = await res.json()

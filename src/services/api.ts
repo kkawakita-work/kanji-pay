@@ -111,6 +111,7 @@ export const api = {
           })
           return {
             ok: response.ok,
+            status: response.status,
             json: async (): Promise<StripeOnboardingResponse> => response.json()
           }
         }
