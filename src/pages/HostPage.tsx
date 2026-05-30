@@ -71,6 +71,11 @@ const HostPage: React.FC = () => {
     if (stripeConnectStatus === 'success') {
       const tenantId = searchParams.get('tenantId') || ''
       const token = searchParams.get('token') || ''
+      const stripeConnectedAccountId = searchParams.get('stripeConnectedAccountId') || ''
+
+      if (stripeConnectedAccountId) {
+        localStorage.setItem('kanjipay_stripe_account_id', stripeConnectedAccountId)
+      }
 
       if (tenantId && token) {
         // Stripe 連携が完了して戻ってきたので、金額・人数を入力するモーダルを開く
@@ -133,6 +138,24 @@ const HostPage: React.FC = () => {
 
   const perMemberAmount = calculatePerMember()
 
+  // Trigger modal or onboarding redirect based on existing Stripe Account
+  const handleOpenCreateModal = () => {
+    const savedAccountId = localStorage.getItem('kanjipay_stripe_account_id')
+    
+    if (savedAccountId) {
+      // 🌟 2回目以降：すでに Stripe 連携アカウントがあるので直接金額と人数を入力！
+      setNewTenantId('')
+      setNewAdminToken('')
+      setTotalAmount('')
+      setMembersCount('')
+      setGeneratedUrl('')
+      setShowModal(true)
+    } else {
+      // 🌟 初回：まだ口座連携していないので安心ガイドモーダルを表示してStripeへ誘導
+      setShowGuideModal(true)
+    }
+  }
+
   // Handle Stripe Connect standard onboarding redirect immediately on button click
   const handleStartOnboarding = async () => {
     setGlobalLoading(true)
@@ -181,13 +204,49 @@ const HostPage: React.FC = () => {
   // Handle final split information submission after Stripe onboarding success
   const handleSubmitSplitInfo = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (perMemberAmount <= 0 || !newTenantId || !newAdminToken) return
+    if (perMemberAmount <= 0) return
 
     setModalLoading(true)
     setModalError(false)
     setModalErrorMsg('')
 
     try {
+      let tenantId = newTenantId
+      let adminToken = newAdminToken
+
+      // 🌟 2回目以降のフロー（オンボーディングをスキップした場合）
+      if (!tenantId) {
+        const savedAccountId = localStorage.getItem('kanjipay_stripe_account_id')
+        if (!savedAccountId) {
+          throw new Error('Stripe口座の連携情報が見つかりません。最初の連携を行ってください。')
+        }
+
+        // バックエンドに既存の Stripe 連結アカウントIDを渡して新規テナント（イベント）を作成！
+        const res = await api.v1.tenants.$post({
+          json: {
+            name: `${parseInt(totalAmount, 10).toLocaleString()}円割り勘 (${membersCount}人)`,
+            type: 'EVENT',
+            paymentType: 'STRIPE_CONNECT',
+            stripeConnectedAccountId: savedAccountId
+          }
+        })
+
+        if (!res.ok) {
+          let errorDetail = ''
+          try {
+            const errData = await res.json() as any
+            errorDetail = errData.error || errData.message || JSON.stringify(errData)
+          } catch {
+            errorDetail = `Status: ${res.status}`
+          }
+          throw new Error(`新規イベントの作成に失敗しました (HTTP ${res.status}): ${errorDetail}`)
+        }
+
+        const tenantData = await res.json()
+        tenantId = tenantData.id
+        adminToken = tenantData.adminToken
+      }
+
       let tempEvents: ManagedEvent[] = []
       try {
         const saved = localStorage.getItem('kanjipay_events')
@@ -199,27 +258,28 @@ const HostPage: React.FC = () => {
       }
 
       // 重複登録を防止して LocalStorage に保存
-      if (!tempEvents.some(e => e.id === newTenantId)) {
+      if (!tempEvents.some(e => e.id === tenantId)) {
         const newEvent: ManagedEvent = {
-          id: newTenantId,
+          id: tenantId,
           name: `${parseInt(totalAmount, 10).toLocaleString()}円割り勘 (${membersCount}人)`,
-          adminToken: newAdminToken,
+          adminToken: adminToken,
           totalAmount: parseInt(totalAmount, 10),
           membersCount: parseInt(membersCount, 10),
           perMemberAmount: perMemberAmount,
           createdAt: new Date().toISOString(),
-          paymentType: 'STRIPE_CONNECT'
+          paymentType: 'STRIPE_CONNECT',
+          stripeConnectedAccountId: localStorage.getItem('kanjipay_stripe_account_id') || undefined
         }
         
         tempEvents = [newEvent, ...tempEvents]
         localStorage.setItem('kanjipay_events', JSON.stringify(tempEvents))
         setEvents(tempEvents)
-        console.log(`Successfully registered Stripe Connect tenant: ${newTenantId}`)
+        console.log(`Successfully registered Stripe Connect tenant: ${tenantId}`)
       }
 
       // 決済リンクの生成
       const origin = window.location.origin
-      const checkoutUrl = `${origin}/pay?tenantId=${newTenantId}&amount=${perMemberAmount}`
+      const checkoutUrl = `${origin}/pay?tenantId=${tenantId}&amount=${perMemberAmount}`
       setGeneratedUrl(checkoutUrl)
 
     } catch (err: any) {
@@ -271,7 +331,7 @@ const HostPage: React.FC = () => {
           className="btn btn-primary" 
           style={{ width: 'auto', padding: '10px 16px', fontSize: '13px', borderRadius: 'var(--radius-sm)' }}
           disabled={globalLoading}
-          onClick={() => setShowGuideModal(true)}
+          onClick={handleOpenCreateModal}
         >
           {globalLoading ? (
             <>
@@ -303,7 +363,7 @@ const HostPage: React.FC = () => {
             className="btn btn-primary" 
             style={{ width: 'auto', padding: '14px 28px' }}
             disabled={globalLoading}
-            onClick={() => setShowGuideModal(true)}
+            onClick={handleOpenCreateModal}
           >
             {globalLoading ? (
               <>
