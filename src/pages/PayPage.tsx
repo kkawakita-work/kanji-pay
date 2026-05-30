@@ -56,6 +56,7 @@ const PayPage: React.FC = () => {
       const elements = stripe.elements()
 
       card = elements.create('card', {
+        hidePostalCode: true, // Disable postal code input to simplify user input flow
         style: {
           base: {
             color: '#1f2937',
