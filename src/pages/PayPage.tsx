@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { Coins, User, CreditCard, AlertCircle } from 'lucide-react'
+import { Coins, User, Wallet, AlertCircle } from 'lucide-react'
 import { api } from '../services/api'
 import { getStripe } from '../services/stripe'
 
@@ -16,7 +16,6 @@ const PayPage: React.FC = () => {
   const [tenantId, setTenantId] = useState<string>('')
 
   const [stripeInstance, setStripeInstance] = useState<any>(null)
-  const [cardElement, setCardElement] = useState<any>(null)
 
   // Load split amount and tenantId from query parameters
   useEffect(() => {
@@ -41,57 +40,17 @@ const PayPage: React.FC = () => {
     }
   }, [searchParams])
 
-  // Initialize Stripe and mount Card Element safely
+  // Initialize Stripe instance
   useEffect(() => {
     if (baseAmount === 0 || errorMsg || !tenantId) return
 
-    let active = true
-    let card: any = null
-
     const initStripe = async () => {
       const stripe = await getStripe()
-      if (!stripe || !active) return
-      setStripeInstance(stripe)
-
-      const elements = stripe.elements()
-
-      card = elements.create('card', {
-        hidePostalCode: true, // Disable postal code input to simplify user input flow
-        style: {
-          base: {
-            color: '#1f2937',
-            fontFamily: 'Inter, system-ui, sans-serif',
-            fontSmoothing: 'antialiased',
-            fontSize: '15px',
-            '::placeholder': {
-              color: '#9ca3af'
-            }
-          },
-          invalid: {
-            color: '#ef4444',
-            iconColor: '#ef4444'
-          }
-        }
-      })
-
-      // Wait briefly for the DOM element to mount the container safely
-      setTimeout(() => {
-        const container = document.getElementById('card-element')
-        if (container && active) {
-          card.mount('#card-element')
-          setCardElement(card)
-        }
-      }, 50)
-    }
-
-    initStripe()
-
-    return () => {
-      active = false
-      if (card) {
-        card.destroy()
+      if (stripe) {
+        setStripeInstance(stripe)
       }
     }
+    initStripe()
   }, [baseAmount, errorMsg, tenantId])
 
   const tipOptions = [
@@ -145,16 +104,22 @@ const PayPage: React.FC = () => {
       const payment = await res.json() as any
       const { clientSecret, id: paymentId } = payment
 
-      if (!stripeInstance || !cardElement) {
-        throw new Error('Stripeカード入力欄が初期化されていません。ブラウザのリロードをお試しください。')
+      if (!stripeInstance) {
+        throw new Error('Stripe決済システムが初期化されていません。ブラウザのリロードをお試しください。')
       }
 
-      // 2. Confirm the Card Payment using standard confirmCardPayment SDK
-      const { error, paymentIntent } = await stripeInstance.confirmCardPayment(clientSecret, {
-        payment_method: {
-          card: cardElement,
-          billing_details: {
-            name: memberName.trim()
+      // 2. Confirm the PayPay Payment using standard unified confirmPayment API
+      const returnUrl = `${window.location.origin}/status/${paymentId}`
+
+      const { error } = await stripeInstance.confirmPayment({
+        clientSecret,
+        confirmParams: {
+          return_url: returnUrl,
+          payment_method_data: {
+            type: 'paypay',
+            billing_details: {
+              name: memberName.trim()
+            }
           }
         }
       })
@@ -162,12 +127,6 @@ const PayPage: React.FC = () => {
       if (error) {
         console.error('Stripe confirm error:', error)
         throw new Error(error.message || '決済処理中にエラーが発生しました。')
-      }
-
-      if (paymentIntent && paymentIntent.status === 'succeeded') {
-        navigate(`/status/${paymentId}`)
-      } else {
-        throw new Error('決済の処理が完了しませんでした。ステータスをご確認ください。')
       }
 
     } catch (err: any) {
@@ -237,22 +196,31 @@ const PayPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="form-group" style={{ marginBottom: '20px' }}>
+        <div className="form-group" style={{ marginBottom: '24px' }}>
           <label className="form-label">
-            クレジットカード情報
+            お支払い方法
           </label>
           <div 
-            id="card-element" 
             style={{ 
-              padding: '12px 14px', 
-              border: '1px solid var(--border)', 
-              borderRadius: 'var(--radius-sm)', 
-              backgroundColor: '#fff',
-              boxShadow: 'var(--shadow-sm)'
+              padding: '14px 16px', 
+              border: '1px solid rgba(255, 0, 59, 0.15)', 
+              borderRadius: 'var(--radius-md)', 
+              backgroundColor: 'rgba(255, 0, 59, 0.02)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px'
             }}
           >
-            {/* Stripe Card Element mounts here */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span className="paypay-badge">PayPay</span>
+              <span style={{ fontSize: '14px', fontWeight: '600' }}>PayPay残高払い</span>
+            </div>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>手数料無料</span>
           </div>
+          <p className="text-muted" style={{ marginTop: '8px', fontSize: '11px', lineHeight: '1.4' }}>
+            ※「PayPayで支払う」ボタンをタップすると、自動的にPayPayアプリまたはブラウザの認証画面へ安全に切り替わります。
+          </p>
         </div>
 
         <div className="form-group">
@@ -296,18 +264,18 @@ const PayPage: React.FC = () => {
 
         <button
           type="submit"
-          className="btn btn-primary"
+          className="btn btn-paypay"
           disabled={loading || !memberName.trim()}
         >
           {loading ? (
             <>
-              <span className="loader"></span>
-              決済処理中...
+              <span className="loader" style={{ borderTopColor: '#fff', marginRight: '6px' }}></span>
+              PayPay連携中...
             </>
           ) : (
             <>
-              <CreditCard size={18} />
-              Stripeで支払う（クレジットカード決済）
+              <Wallet size={18} />
+              PayPayで支払う
             </>
           )}
         </button>
