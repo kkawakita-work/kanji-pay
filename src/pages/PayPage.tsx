@@ -57,13 +57,7 @@ const PayPage: React.FC = () => {
 
   // Initialize and mount Card Element when 'card' method is active
   useEffect(() => {
-    if (!stripeInstance || paymentMethod !== 'card') {
-      if (cardElement) {
-        cardElement.destroy()
-        setCardElement(null)
-      }
-      return
-    }
+    if (!stripeInstance || paymentMethod !== 'card') return
 
     let active = true
     let card: any = null
@@ -103,7 +97,12 @@ const PayPage: React.FC = () => {
     return () => {
       active = false
       if (card) {
-        card.destroy()
+        try {
+          card.destroy()
+        } catch (e) {
+          console.warn('Stripe card destruction deferred or already handled:', e)
+        }
+        setCardElement(null)
       }
     }
   }, [stripeInstance, paymentMethod])
